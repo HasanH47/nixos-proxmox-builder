@@ -43,13 +43,13 @@ info "Jalankan build NixOS 25.11 Proxmox image..."
 info "Ini akan memakan waktu cukup lama (15-45 menit tergantung koneksi & CPU)"
 echo ""
 
-FORMAT="${1:-qcow2}"
+FORMAT="${1:-qcow2-universal}"
 
 case "$FORMAT" in
-  qcow2|qcow2-bios|proxmox)
+  qcow2-universal|qcow2|qcow2-bios|proxmox)
     ;;
   *)
-    error "Format tidak dikenali: $FORMAT (pilih: qcow2 | qcow2-bios | proxmox)"
+    error "Format tidak dikenali: $FORMAT (pilih: qcow2-universal | qcow2 | qcow2-bios | proxmox)"
     ;;
 esac
 
@@ -57,8 +57,10 @@ OUT_LINK="$OUTPUT_DIR/result"
 rm -f "$OUT_LINK" 2>/dev/null || true
 
 # zsh akan melakukan globbing pada `#` kalau tidak di-quote.
-TARGET='.#qcow2-image'
-if [[ "$FORMAT" == "qcow2-bios" ]]; then
+TARGET='.#qcow2-universal-image'
+if [[ "$FORMAT" == "qcow2" ]]; then
+  TARGET='.#qcow2-image'
+elif [[ "$FORMAT" == "qcow2-bios" ]]; then
   TARGET='.#qcow2-bios-image'
 elif [[ "$FORMAT" == "proxmox" ]]; then
   TARGET='.#proxmox-image'

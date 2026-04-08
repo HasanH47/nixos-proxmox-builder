@@ -1,6 +1,7 @@
 # NixOS 25.11 Proxmox Image Builder
 
-Build NixOS 25.11 Proxmox image (`.vma.zst`) menggunakan Nix lokal (tanpa Docker).
+Build NixOS 25.11 image untuk Proxmox/QEMU menggunakan Nix lokal (tanpa Docker).
+Default output sekarang adalah **1 QCOW2 universal** yang bisa boot di **BIOS (SeaBIOS)** maupun **UEFI (non–Secure Boot)**.
 
 ## Struktur File
 
@@ -73,10 +74,17 @@ Kalau VM Proxmox kamu pakai BIOS legacy (SeaBIOS) dan QCOW2 UEFI stuck di
 ./build.sh qcow2-bios
 ```
 
+QCOW2 universal (BIOS + UEFI) (default):
+```bash
+./build.sh
+# atau eksplisit:
+./build.sh qcow2-universal
+```
+
 Atau manual tanpa script (perhatikan `#` harus di-quote di zsh):
 ```bash
 mkdir -p output
-nix build -L '.#qcow2-image' --out-link ./output/result
+nix build -L '.#qcow2-universal-image' --out-link ./output/result
 ```
 
 > **Catatan:** Build pertama bisa memakan waktu 15–45 menit karena
@@ -89,13 +97,17 @@ nix build -L '.#qcow2-image' --out-link ./output/result
 scp output/result/*.qcow2 root@<proxmox-host>:/tmp/
 ```
 
-### 5. Restore di Proxmox
+### 5. Import ke Proxmox (QCOW2)
 
-SSH ke Proxmox, lalu:
+SSH ke Proxmox, lalu (contoh VMID=100 dan storage `local-lvm`):
 ```bash
-qmrestore /tmp/vzdump-qemu-nixos-template.vma.zst 100 --storage local-lvm
+qm create 100 --name nixos-template --memory 2048 --cores 2 --bios seabios --net0 virtio,bridge=vmbr0
+qm importdisk 100 /tmp/nixos-template.qcow2 local-lvm
+qm set 100 --scsihw virtio-scsi-pci --scsi0 local-lvm:vm-100-disk-0
+qm set 100 --boot order=scsi0
+qm start 100
 ```
-Ganti `100` dengan VMID yang kamu inginkan.
+Jika kamu pakai UEFI/OVMF, ganti `--bios seabios` menjadi `--bios ovmf` dan pastikan Secure Boot dimatikan.
 
 ### 6. Konfigurasi Cloud-init di Proxmox (opsional)
 
@@ -135,6 +147,9 @@ QCOW2 default di repo ini adalah **UEFI**. Di Proxmox, pastikan VM pakai **OVMF/
 ```bash
 ./build.sh qcow2-bios
 ```
+
+**QCOW2 universal untuk berbagai controller (`scsi0` / `virtio0`)**
+Gunakan default `./build.sh` (target `qcow2-universal`) agar root mount portable (by-UUID) dan bisa boot di BIOS/UEFI.
 
 **VM tidak dapat IP setelah boot:**
 Pastikan `proxmox.cloudInit.enable = true` dan `systemd.network.enable = true`

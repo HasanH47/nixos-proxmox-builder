@@ -20,6 +20,16 @@
         ];
       }).config.system.build.VMA;
 
+    # Universal QCOW2: single disk that boots on BIOS and UEFI.
+    packages.x86_64-linux.qcow2-universal-image =
+      (nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          ./configuration.nix
+          ./universal-qcow2.nix
+        ];
+      }).config.system.build.image;
+
     # Generic QCOW2 image (for sysadmin/import workflows).
     packages.x86_64-linux.qcow2-image =
       (nixpkgs.lib.nixosSystem {
@@ -89,6 +99,6 @@
       }).config.system.build.image;
 
     # Alias default
-    packages.x86_64-linux.default = self.packages.x86_64-linux.qcow2-image;
+    packages.x86_64-linux.default = self.packages.x86_64-linux.qcow2-universal-image;
   };
 }
