@@ -67,6 +67,12 @@ chmod +x build.sh
 ./build.sh qcow2
 ```
 
+Kalau VM Proxmox kamu pakai BIOS legacy (SeaBIOS) dan QCOW2 UEFI stuck di
+"Booting from Hard Disk…", build varian legacy:
+```bash
+./build.sh qcow2-bios
+```
+
 Atau manual tanpa script (perhatikan `#` harus di-quote di zsh):
 ```bash
 mkdir -p output
@@ -121,6 +127,13 @@ nixos-rebuild switch --flake .#namaHost \
 Quote target flake:
 ```bash
 nix build '.#proxmox-image'
+```
+
+**QCOW2 stuck "Booting from Hard Disk" di Proxmox**
+QCOW2 default di repo ini adalah **UEFI**. Di Proxmox, pastikan VM pakai **OVMF/UEFI**
+(dan Secure Boot dimatikan), atau build varian legacy:
+```bash
+./build.sh qcow2-bios
 ```
 
 **VM tidak dapat IP setelah boot:**

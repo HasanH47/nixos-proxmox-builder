@@ -8,6 +8,9 @@ set -euo pipefail
 
 OUTPUT_DIR="$(pwd)/output"
 
+# Nix builds can create large temp files; /tmp might be small (tmpfs).
+export TMPDIR="${TMPDIR:-/var/tmp}"
+
 # Warna untuk output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -43,10 +46,10 @@ echo ""
 FORMAT="${1:-qcow2}"
 
 case "$FORMAT" in
-  qcow2|proxmox)
+  qcow2|qcow2-bios|proxmox)
     ;;
   *)
-    error "Format tidak dikenali: $FORMAT (pilih: qcow2 | proxmox)"
+    error "Format tidak dikenali: $FORMAT (pilih: qcow2 | qcow2-bios | proxmox)"
     ;;
 esac
 
@@ -54,18 +57,22 @@ OUT_LINK="$OUTPUT_DIR/result"
 rm -f "$OUT_LINK" 2>/dev/null || true
 
 # zsh akan melakukan globbing pada `#` kalau tidak di-quote.
-if [[ "$FORMAT" == "qcow2" ]]; then
-  nix build -L '.#qcow2-image' --out-link "$OUT_LINK"
-else
-  nix build -L '.#proxmox-image' --out-link "$OUT_LINK"
+TARGET='.#qcow2-image'
+if [[ "$FORMAT" == "qcow2-bios" ]]; then
+  TARGET='.#qcow2-bios-image'
+elif [[ "$FORMAT" == "proxmox" ]]; then
+  TARGET='.#proxmox-image'
 fi
 
+# zsh akan melakukan globbing pada `#` kalau tidak di-quote.
+nix build -L "$TARGET" --out-link "$OUT_LINK"
+
 # --- Cari file VMA hasil build ---
-VMA_FILE=$(find "$OUTPUT_DIR/result" -name "*.vma.zst" 2>/dev/null | head -1)
+VMA_FILE=$(find -L "$OUTPUT_DIR/result" -maxdepth 2 -name "*.vma.zst" 2>/dev/null | head -1)
 QCOW2_FILE=$(find -L "$OUTPUT_DIR/result" -maxdepth 2 -name "*.qcow2" 2>/dev/null | head -1)
 
 if [[ -z "$VMA_FILE" ]]; then
-  # Coba cari di dalam result symlink
+  # Coba cari di dalam output lain kalau user ubah out-link manual.
   VMA_FILE=$(find -L "$OUTPUT_DIR" -name "*.vma.zst" 2>/dev/null | head -1)
 fi
 
@@ -74,7 +81,7 @@ info "============================================"
 info "Build selesai!"
 info "============================================"
 
-if [[ "$FORMAT" == "qcow2" && -n "$QCOW2_FILE" ]]; then
+if [[ "$FORMAT" == qcow2* && -n "$QCOW2_FILE" ]]; then
   info "File QCOW2: $QCOW2_FILE"
   ls -lh "$QCOW2_FILE"
 elif [[ "$FORMAT" == "proxmox" && -n "$VMA_FILE" ]]; then
