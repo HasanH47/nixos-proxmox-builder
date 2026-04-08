@@ -1,9 +1,10 @@
 { lib, pkgs, config, ... }:
 
 let
-  # Keep stable identifiers so the image is bootable regardless of disk bus
-  # (virtio/scsi/sata) by mounting via by-uuid rather than /dev/vda1.
-  rootUUID = "F222513B-DED1-49FA-B591-20CE86A2FE7F";
+  # Use a stable GPT PARTUUID so the image is bootable regardless of disk bus
+  # (virtio/scsi/sata) by mounting via by-partuuid rather than /dev/vda1.
+  rootPartUUID = "F222513B-DED1-49FA-B591-20CE86A2FE7F";
+  rootPartUUIDPath = lib.toLower rootPartUUID;
 in
 {
   # ===========================================================
@@ -48,7 +49,8 @@ in
   ];
 
   fileSystems."/" = lib.mkForce {
-    device = "/dev/disk/by-uuid/${rootUUID}";
+    # udev exposes partuuid paths in lowercase.
+    device = "/dev/disk/by-partuuid/${rootPartUUIDPath}";
     autoResize = true;
     fsType = "ext4";
   };
@@ -67,9 +69,8 @@ in
     format = "qcow2";
     partitionTableType = "hybrid";
 
-    # Make the root filesystem UUID stable so mounting by UUID works everywhere.
-    rootGPUID = rootUUID;
-    rootFSUID = rootUUID;
+    # Make the root partition PARTUUID stable so mounting by PARTUUID works everywhere.
+    rootGPUID = rootPartUUID;
     label = "nixos";
   };
 }
