@@ -12,13 +12,4 @@ in
       KbdInteractiveAuthentication = cfg.ssh.allowPasswordAuth;
     };
   };
-
-  users.users.nixos = {
-    isNormalUser = true;
-    extraGroups = [ "wheel" "sudo" ];
-    initialPassword = "nixos";
-    # openssh.authorizedKeys.keys = [
-    #   "ssh-ed25519 AAAAC3Nza... user@host"
-    # ];
-  };
 }

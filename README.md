@@ -71,12 +71,16 @@ EOF
 
 ### 1. Tambahkan SSH public key kamu
 
-Edit [`modules/openssh-bootstrap.nix`](modules/openssh-bootstrap.nix) (atau override di `configuration.nix`):
+Karena image ini **tidak membuat user statis** (user dibuat oleh Proxmox/cloud-init), cara paling umum:
+
+- Set SSH key di Proxmox UI tab **Cloud-Init** (atau `qm set --sshkeys ...`) untuk `ciuser` kamu.
+
+Kalau kamu mau tetap bake-in key untuk user tertentu (opsional), kamu bisa menambahkan modul sendiri dan import di
+[`configuration.nix`](configuration.nix).
 
 ```nix
-users.users.nixos.openssh.authorizedKeys.keys = [
-  "ssh-ed25519 AAAAC3Nza... user@host"
-];
+# Contoh (opsional): buat user statis sendiri
+# users.users.myuser.openssh.authorizedKeys.keys = [ "ssh-ed25519 AAAA..." ];
 ```
 
 Untuk lihat SSH key kamu:
@@ -141,12 +145,10 @@ qm start 100
 ```
 Jika kamu pakai UEFI/OVMF, ganti `--bios seabios` menjadi `--bios ovmf` dan pastikan Secure Boot dimatikan.
 
-Image template menyimpan password bootstrap user `nixos` di [`modules/openssh-bootstrap.nix`](modules/openssh-bootstrap.nix)
-(`initialPassword`, default: **`nixos` / `nixos`** — login konsol atau SSH selagi `image.ssh.allowPasswordAuth = true`).
-Ganti atau hapus password itu setelah deploy aman.
-
 **User Proxmox (`ciuser`) dan `sudo`:** cloud-init Proxmox biasanya memasukkan user ke grup **`sudo`**.
-Grup `sudo` dan aturan `%sudo` dikonfigurasi di [`modules/cloud-init-proxmox.nix`](modules/cloud-init-proxmox.nix); nonaktifkan dengan `image.security.sudoNopasswdForSudoGroup = false` bila perlu.
+Image ini mendefinisikan grup `sudo` dan rule **`%sudo NOPASSWD`** (lihat [`modules/cloud-init-proxmox.nix`](modules/cloud-init-proxmox.nix))
+supaya `sudo` tetap enak meskipun password Proxmox tidak ter-apply di guest.
+Nonaktifkan dengan `image.security.sudoNopasswdForSudoGroup = false` bila perlu.
 
 ### 6. Konfigurasi Cloud-init di Proxmox (disarankan)
 
@@ -247,9 +249,8 @@ Pastikan drive cloud-init ada, tab Cloud-Init diisi, dan **Regenerate Image** di
 Pastikan `services.cloud-init` + `systemd.network.enable` aktif, cloud-init drive terpasang, dan tidak ada bentrok DHCP (default: `image.cloudInit.strictNetwork` mematikan DHCP global). Untuk lab tanpa seed, coba `image.cloudInit.allowFallbackDhcp = true`.
 
 **Tidak bisa SSH setelah boot:**
-Tanpa kunci: coba `ssh nixos@<ip>` dengan password **`nixos`** (bootstrap). Dengan kunci: pakai key dari
-`configuration.nix` atau dari Proxmox (`--sshkeys` / tab Cloud-Init). Setelah stabil, matikan password SSH jika mau.
+Image ini default **SSH password auth off**. Gunakan SSH key dari Proxmox (`--sshkeys` / tab Cloud-Init).
 
-**Bukan login standar Ubuntu:** user `nixos` memakai password `initialPassword` di `configuration.nix` (lihat bagian import / 6).
+**Password Proxmox untuk login console** dianggap opsional: kalau ke-apply ya bagus, kalau tidak—`sudo` tetap jalan via `%sudo NOPASSWD`.
 
 **VM yang sudah jalan dengan image lama** tidak otomatis dapat perubahan ini; rebuild dari QCOW2 baru atau samakan modul di `/etc/nixos/` lalu `nixos-rebuild switch` (butuh akses root — biasanya lewat konsol sebagai `nixos`).

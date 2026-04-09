@@ -29,10 +29,10 @@ in
     ssh = {
       allowPasswordAuth = mkOption {
         type = types.bool;
-        default = true;
+        default = false;
         description = ''
-          Allow SSH password authentication (bootstrap user `nixos`).
-          Set to false for stricter deployments after keys work.
+          Allow SSH password authentication (generally avoid for cloud images).
+          Keep this false and use SSH keys from Proxmox cloud-init.
         '';
       };
     };

@@ -10,6 +10,7 @@
 #
 # Lingkungan:
 #   TEST_SSH_PUB     - file public key untuk user-data (default: ~/.ssh/id_ed25519.pub)
+#   TEST_CIUSER      - nama user yang dibuat cloud-init (default: hasanh47)
 #   QEMU_EXTRA       - arg tambahan ke qemu (mis. -display none)
 #   QEMU_UEFI        - jika "1", pakai firmware UEFI (OVMF) — butuh OVMF_CODE.fd + OVMF_VARS.fd di PATH distro
 #   QEMU_MEMORY      - RAM MiB (default: 2048)
@@ -63,6 +64,8 @@ trap cleanup EXIT
 NO="$WORKDIR/nocloud"
 mkdir -p "$NO"
 
+CIUSER="${TEST_CIUSER:-hasanh47}"
+
 PUB_FILE="${TEST_SSH_PUB:-$HOME/.ssh/id_ed25519.pub}"
 SSH_LINE=""
 if [[ -f "$PUB_FILE" ]]; then
@@ -90,12 +93,12 @@ NET
 
 if [[ -n "$SSH_LINE" ]]; then
   {
-    printf '%s\n' '#cloud-config' "$NETWORK_YAML" '' 'users:' '  - name: nixos' '    ssh_authorized_keys:'
+    printf '%s\n' '#cloud-config' "$NETWORK_YAML" '' 'users:' "  - name: $CIUSER" '    groups: [sudo]' '    lock_passwd: true' '    ssh_authorized_keys:'
     printf '      - %s\n' "$SSH_LINE"
   } >"$NO/user-data"
 else
   {
-    printf '%s\n' '#cloud-config' "$NETWORK_YAML"
+    printf '%s\n' '#cloud-config' "$NETWORK_YAML" '' 'users:' "  - name: $CIUSER" '    groups: [sudo]' '    lock_passwd: true'
   } >"$NO/user-data"
 fi
 
