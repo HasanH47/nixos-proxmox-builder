@@ -26,11 +26,21 @@ if ! command -v nix &>/dev/null; then
   error "Nix tidak ditemukan. Pastikan sudah install dan environment tersource. Contoh: . ~/.nix-profile/etc/profile.d/nix.sh"
 fi
 
-# --- Cek SSH key di configuration.nix ---
-if grep -q "# Tambahkan SSH public key kamu di sini" configuration.nix && \
-   ! grep -qE '"ssh-(rsa|ed25519|ecdsa)' configuration.nix; then
-  warn "SSH public key belum ditambahkan di configuration.nix!"
-  warn "Edit configuration.nix dan tambahkan key kamu di bagian authorizedKeys.keys"
+# --- Cek SSH public key (configuration.nix atau modules/openssh-bootstrap.nix) ---
+shopt -s nullglob
+SSH_KEY_FOUND=0
+for f in configuration.nix modules/*.nix; do
+  [[ -f "$f" ]] || continue
+  if grep -qE '"ssh-(rsa|ed25519|ecdsa|sk-ed25519|sk-ecdsa)' "$f" 2>/dev/null \
+     || grep -qE 'sk-ssh-ed25519@openssh\.com' "$f" 2>/dev/null; then
+    SSH_KEY_FOUND=1
+    break
+  fi
+done
+shopt -u nullglob
+if [[ "$SSH_KEY_FOUND" -eq 0 ]]; then
+  warn "Belum ada baris authorizedKeys yang berisi public key (ssh-ed25519 / ssh-rsa, dll.)"
+  warn "Tambahkan di modules/openssh-bootstrap.nix atau override di configuration.nix"
   echo ""
   read -rp "Lanjut build tanpa SSH key? (y/N): " yn
   [[ "$yn" =~ ^[Yy]$ ]] || exit 0

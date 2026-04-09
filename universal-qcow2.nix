@@ -9,13 +9,8 @@ in
 {
   # ===========================================================
   # Universal QCOW2 (BIOS + UEFI) settings
+  # (kernelParams / initrd / serial GRUB: lihat modules/boot-initrd-common.nix)
   # ===========================================================
-
-  # Make early boot visible both on VGA (noVNC) and serial consoles.
-  boot.kernelParams = [
-    "console=tty0"
-    "console=ttyS0,115200n8"
-  ];
 
   boot.loader = {
     systemd-boot.enable = lib.mkForce false;
@@ -27,27 +22,10 @@ in
       efiInstallAsRemovable = true;
       # Installed during image build where the disk is presented as /dev/vda.
       devices = [ "/dev/vda" ];
-      extraConfig = ''
-        serial --unit=0 --speed=115200 --word=8 --parity=no --stop=1
-        terminal_input console serial
-        terminal_output console serial
-      '';
     };
 
     timeout = 1;
   };
-
-  # Ensure initrd has common disk drivers.
-  boot.initrd.availableKernelModules = [
-    "virtio_pci"
-    "virtio_blk"
-    "virtio_scsi"
-    "scsi_mod"
-    "ahci"
-    "sd_mod"
-    "sr_mod"
-    "ext4"
-  ];
 
   fileSystems."/" = lib.mkForce {
     # udev exposes partuuid paths in lowercase.

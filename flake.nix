@@ -5,7 +5,28 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
   };
 
-  outputs = { self, nixpkgs }: {
+  outputs = { self, nixpkgs }: let
+    inherit (nixpkgs) lib;
+    pkgs = nixpkgs.legacyPackages.x86_64-linux;
+    # Eval cepat: gabung modul image tanpa build disk/kernel penuh sampai ada yang akses toplevel.
+    checkSystem = lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        ./configuration.nix
+        ({ lib, ... }: {
+          boot.loader.grub.enable = lib.mkForce false;
+          boot.loader.systemd-boot.enable = lib.mkForce false;
+          fileSystems."/" = lib.mkForce {
+            device = "/dev/vda1";
+            fsType = "ext4";
+          };
+        })
+      ];
+    };
+  in {
+    checks.x86_64-linux.nixos-config =
+      pkgs.writeText "stateVersion" checkSystem.config.system.stateVersion;
+
     packages.x86_64-linux.proxmox-image =
       (nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
@@ -71,26 +92,6 @@
             fileSystems."/" = lib.mkForce {
               device = "/dev/vda1";
               fsType = "ext4";
-            };
-
-            boot.initrd.availableKernelModules = [
-              "virtio_pci"
-              "virtio_blk"
-              "ext4"
-            ];
-
-            # Make early boot visible on serial console (useful for QEMU/Proxmox debugging).
-            boot.kernelParams = [
-              "console=tty0"
-              "console=ttyS0,115200n8"
-            ];
-
-            boot.loader.grub = {
-              extraConfig = ''
-                serial --unit=0 --speed=115200 --word=8 --parity=no --stop=1
-                terminal_input console serial
-                terminal_output console serial
-              '';
             };
 
             boot.loader.timeout = 1;

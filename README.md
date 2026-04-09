@@ -8,12 +8,45 @@ Default output sekarang adalah **1 QCOW2 universal** yang bisa boot di **BIOS (S
 ```
 .
 ├── Dockerfile         # (legacy) dulu dipakai untuk build via Docker
-├── flake.nix          # Definisi build dengan nixpkgs 25.11
-├── configuration.nix  # Konfigurasi NixOS untuk VM Proxmox
+├── flake.nix          # Definisi build, packages, checks
+├── configuration.nix  # Entry tipis + opsional override `image.*`
+├── modules/           # Profil terpisah (cloud-init, SSH, initrd, …)
 ├── build.sh           # Script helper untuk build & output
 ├── scripts/           # Utilitas (simulasi QEMU mirip Proxmox)
 └── output/            # Folder hasil build (dibuat otomatis)
 ```
+
+### Opsi `image.*` (umum / kurang footgun)
+
+Didefinikan di [`modules/image-profile.nix`](modules/image-profile.nix), di-override dari [`configuration.nix`](configuration.nix):
+
+| Opsi | Default | Kapan diubah |
+|------|---------|----------------|
+| `image.cloudInit.strictNetwork` | `true` | Proxmox + NoCloud: biarkan cloud-init mengatur DHCP (pola nixpkgs VMA). |
+| `image.cloudInit.allowFallbackDhcp` | `false` | Lab **tanpa** ISO cloud-init: NixOS bisa DHCP global (bisa race dengan cloud-init di PVE). |
+| `image.ssh.allowPasswordAuth` | `true` | Set `false` setelah SSH key stabil (hardening). |
+| `image.security.sudoNopasswdForSudoGroup` | `true` | Set `false` jika ingin `sudo` pakai password untuk grup `sudo`. |
+
+Verifikasi cepat modul (tanpa build image penuh):
+
+```bash
+nix flake check
+```
+
+### Hardening setelah bootstrap
+
+1. Isi `users.users.nixos.openssh.authorizedKeys.keys` di [`modules/openssh-bootstrap.nix`](modules/openssh-bootstrap.nix) (atau override di `configuration.nix`).
+2. Di `configuration.nix`: `image.ssh.allowPasswordAuth = false;`.
+3. Ganti / hapus `initialPassword` untuk `nixos` lalu `nixos-rebuild switch`.
+4. Opsional: `image.security.sudoNopasswdForSudoGroup = false` dan andalkan password + grup wheel sesuai kebijakanmu.
+
+### Matriks singkat
+
+| Lingkungan | Cloud-init ISO | `strictNetwork` | Catatan |
+|------------|----------------|-----------------|--------|
+| Proxmox UI + Regenerate | Ya | `true` (default) | Disarankan. |
+| QEMU script seed NoCloud | Ya | `true` | Uji end-to-end. |
+| QEMU/import tanpa seed | Tidak | `false` + `allowFallbackDhcp = true` | Hanya lab; di PVE bisa bentrok. |
 
 ## Cara Pakai
 
@@ -38,7 +71,7 @@ EOF
 
 ### 1. Tambahkan SSH public key kamu
 
-Edit `configuration.nix`, cari bagian ini dan isi dengan SSH key kamu:
+Edit [`modules/openssh-bootstrap.nix`](modules/openssh-bootstrap.nix) (atau override di `configuration.nix`):
 
 ```nix
 users.users.nixos.openssh.authorizedKeys.keys = [
@@ -55,12 +88,10 @@ cat ~/.ssh/id_rsa.pub
 
 ### 2. (Opsional) Sesuaikan konfigurasi VM
 
-Di `configuration.nix`, kamu bisa ubah:
-- `proxmox.qemuConf.cores` → jumlah CPU
-- `proxmox.qemuConf.memory` → RAM dalam MB
+Di `configuration.nix` / `modules/common.nix` kamu bisa ubah:
 - `virtualisation.diskSize` → ukuran disk (MiB). Contoh 20GiB = `20480`.
-- `proxmox.qemuConf.bios` → `"seabios"` atau `"ovmf"` (UEFI)
 - `time.timeZone` → timezone
+- **VMA Proxmox** saja: di [`proxmox.nix`](proxmox.nix) — `cores`, `memory`, `bios`, `net0`, dll.
 
 ### 3. Build
 
@@ -110,9 +141,12 @@ qm start 100
 ```
 Jika kamu pakai UEFI/OVMF, ganti `--bios seabios` menjadi `--bios ovmf` dan pastikan Secure Boot dimatikan.
 
-Image template menyimpan password bootstrap user `nixos` di `configuration.nix`
-(`initialPassword`, default build: login konsol **nixos / nixos**).
-Ganti atau hapus password itu setelah SSH(key) dari cloud-init atau dari `configuration.nix` sudah dipakai.
+Image template menyimpan password bootstrap user `nixos` di [`modules/openssh-bootstrap.nix`](modules/openssh-bootstrap.nix)
+(`initialPassword`, default: **`nixos` / `nixos`** — login konsol atau SSH selagi `image.ssh.allowPasswordAuth = true`).
+Ganti atau hapus password itu setelah deploy aman.
+
+**User Proxmox (`ciuser`) dan `sudo`:** cloud-init Proxmox biasanya memasukkan user ke grup **`sudo`**.
+Grup `sudo` dan aturan `%sudo` dikonfigurasi di [`modules/cloud-init-proxmox.nix`](modules/cloud-init-proxmox.nix); nonaktifkan dengan `image.security.sudoNopasswdForSudoGroup = false` bila perlu.
 
 ### 6. Konfigurasi Cloud-init di Proxmox (disarankan)
 
@@ -122,7 +156,7 @@ Checklist:
 
 - Di UI: tab **Cloud-Init** — isi user (mis. `nixos`), SSH public key, IP/hostname sesuai kebutuhan lalu klik **Regenerate Image** agar seed ISO dibuat ulang.
 - Pastikan VM punya **Cloud-Init drive** (bukan hanya disk import); tanpa itu metadata tidak masuk.
-- `configuration.nix` mematikan DHCP “global” NixOS saat cloud-init aktif, agar jaringan ditulis dari user-data (sama seperti modul VMA `proxmox-image.nix` di nixpkgs).
+- Dengan **`image.cloudInit.strictNetwork`** (default): DHCP “global” NixOS dimatikan saat cloud-init aktif, agar jaringan ditulis dari user-data (sama seperti modul VMA `proxmox-image.nix` di nixpkgs).
 
 Atau via CLI:
 ```bash
@@ -169,6 +203,9 @@ nix shell 'nixpkgs#xorriso' 'nixpkgs#qemu' -c \
   ./scripts/qemu-proxmox-like-test.sh ./output/result/nixos-template.qcow2
 ```
 
+Uji **virtio-blk** (mirip `virtio0` di Proxmox):  
+`./scripts/qemu-proxmox-like-test.sh --disk virtio-blk ./output/result/nixos-template.qcow2`
+
 Opsional: `TEST_SSH_PUB=/path/ke/id_ed25519.pub` bila tidak pakai default `~/.ssh/id_ed25519.pub`.  
 UEFI: `QEMU_UEFI=1` (butuh firmware OVMF di host; set `QEMU_OVMF_CODE` / `QEMU_OVMF_VARS` jika perlu).
 
@@ -207,9 +244,12 @@ Di Proxmox, utamakan **VirtIO SCSI** dengan profil **virtio-scsi-single** (atau 
 Pastikan drive cloud-init ada, tab Cloud-Init diisi, dan **Regenerate Image** dijalankan. Lihat checklist di bagian 6 di atas.
 
 **VM tidak dapat IP setelah boot:**
-Pastikan `services.cloud-init` + `systemd.network.enable` aktif di `configuration.nix`, cloud-init drive terpasang, dan tidak ada bentrok DHCP (template ini memakai pola Proxmox: DHCP global NixOS off saat cloud-init on).
+Pastikan `services.cloud-init` + `systemd.network.enable` aktif, cloud-init drive terpasang, dan tidak ada bentrok DHCP (default: `image.cloudInit.strictNetwork` mematikan DHCP global). Untuk lab tanpa seed, coba `image.cloudInit.allowFallbackDhcp = true`.
 
 **Tidak bisa SSH setelah boot:**
-SSH **password** dimatikan; pakai kunci yang di-build di `configuration.nix` atau yang di-inject Proxmox (`--sshkeys`). Konsol bisa dipakai dengan user **nixos** dan password bootstrap dari `initialPassword` sampai kunci siap.
+Tanpa kunci: coba `ssh nixos@<ip>` dengan password **`nixos`** (bootstrap). Dengan kunci: pakai key dari
+`configuration.nix` atau dari Proxmox (`--sshkeys` / tab Cloud-Init). Setelah stabil, matikan password SSH jika mau.
 
-**Bukan login standar Ubuntu:** user `nixos` tidak punya password bawaan kecuali `initialPassword` di `configuration.nix` (lihat bagian import / 6).
+**Bukan login standar Ubuntu:** user `nixos` memakai password `initialPassword` di `configuration.nix` (lihat bagian import / 6).
+
+**VM yang sudah jalan dengan image lama** tidak otomatis dapat perubahan ini; rebuild dari QCOW2 baru atau samakan modul di `/etc/nixos/` lalu `nixos-rebuild switch` (butuh akses root — biasanya lewat konsol sebagai `nixos`).

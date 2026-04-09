@@ -17,12 +17,42 @@
 
 set -euo pipefail
 
-usage() {
-  echo "Usage: $0 /path/to/disk.qcow2" >&2
+print_usage() {
+  echo "Usage: $0 [options] /path/to/disk.qcow2" >&2
+  echo "  --disk scsi          VirtIO SCSI + scsi-hd (default; mirip Proxmox scsi0)" >&2
+  echo "  --disk virtio-blk    virtio-blk (mirip Proxmox virtio0)" >&2
+}
+
+usage_error() {
+  print_usage
   exit 1
 }
 
-[[ $# -ge 1 ]] || usage
+DISK_BUS="scsi"
+POS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --disk)
+      [[ $# -ge 2 ]] || usage_error
+      case "$2" in
+        scsi|virtio-blk) DISK_BUS="$2" ;;
+        *) echo "Unknown --disk value: $2 (use scsi or virtio-blk)" >&2; exit 1 ;;
+      esac
+      shift 2
+      ;;
+    -h|--help)
+      print_usage
+      exit 0
+      ;;
+    *)
+      POS+=("$1")
+      shift
+      ;;
+  esac
+done
+set -- "${POS[@]}"
+
+[[ $# -ge 1 ]] || usage_error
 QCOW="$(readlink -f "$1")"
 [[ -f "$QCOW" ]] || { echo "File not found: $QCOW" >&2; exit 1; }
 
@@ -142,11 +172,22 @@ if [[ "${QEMU_UEFI:-0}" == "1" ]]; then
 fi
 
 echo "=== QEMU (Proxmox-like) ===" >&2
-echo "  Root disk : virtio-scsi  (scsi-hd) — $DISK_QEMU" >&2
+echo "  Root disk : $DISK_BUS — $DISK_QEMU" >&2
 echo "  Cloud-init: ISO NoCloud (cidata) — $SEED_ISO" >&2
 echo "  Serial    : stdio (konsol)" >&2
 echo "  Usernet   : guest SSH hostfwd tcp::2222 -> :22" >&2
 echo "" >&2
+
+DISK_ARGS=()
+if [[ "$DISK_BUS" == "virtio-blk" ]]; then
+  DISK_ARGS+=( -drive "file=$DISK_QEMU,if=virtio,format=qcow2" )
+else
+  DISK_ARGS+=(
+    -drive "file=$DISK_QEMU,if=none,id=disk0,format=qcow2"
+    -device virtio-scsi-pci,id=scsi0
+    -device scsi-hd,drive=disk0,bus=scsi0.0
+  )
+fi
 
 exec "$QEMU_BIN" \
   -machine "type=q35,accel=$ACCEL" \
@@ -156,9 +197,7 @@ exec "$QEMU_BIN" \
   "${FW_ARGS[@]}" \
   -object rng-random,filename=/dev/urandom,id=rng0 \
   -device virtio-rng-pci,rng=rng0 \
-  -drive "file=$DISK_QEMU,if=none,id=disk0,format=qcow2" \
-  -device virtio-scsi-pci,id=scsi0 \
-  -device scsi-hd,drive=disk0,bus=scsi0.0 \
+  "${DISK_ARGS[@]}" \
   -drive "file=$SEED_ISO,media=cdrom,readonly=on" \
   -netdev "user,id=net0,hostfwd=tcp::2222-:22" \
   -device virtio-net-pci,netdev=net0 \
