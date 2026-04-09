@@ -10,11 +10,19 @@
   # Network - wajib untuk cloud-init
   # ===========================================================
   systemd.network.enable = true;
-  networking = {
-    useDHCP          = lib.mkDefault true;
-    firewall.enable  = true;
-    firewall.allowedTCPPorts = [ 22 ];
-  };
+  # Samakan pola nixpkgs proxmox-image.nix: DHCP/hostname global dimatikan
+  # supaya cloud-init (NoCloud ISO dari Proxmox) mengisi systemd-networkd
+  # tanpa bentrok dengan DHCP bawaan NixOS.
+  networking = lib.mkMerge [
+    {
+      firewall.enable = true;
+      firewall.allowedTCPPorts = [ 22 ];
+    }
+    (lib.mkIf config.services.cloud-init.enable {
+      hostName = lib.mkForce "";
+      useDHCP = lib.mkForce false;
+    })
+  ];
 
   # ===========================================================
   # SSH
@@ -34,6 +42,8 @@
   users.users.nixos = {
     isNormalUser = true;
     extraGroups  = [ "wheel" ];
+    # Bootstrap konsol: ganti setelah deploy atau hapus setelah SSH key dari cloud-init jalan.
+    initialPassword = "nixos";
     # openssh.authorizedKeys.keys = [
       # Contoh: "ssh-ed25519 AAAAC3Nza... user@host"
       # Tambahkan SSH public key kamu di sini
@@ -78,6 +88,9 @@
   services.cloud-init = {
     enable = true;
     network.enable = true;
+    settings = {
+      datasource_list = [ "NoCloud" "ConfigDrive" "None" ];
+    };
   };
 
   services.qemuGuest.enable = true;

@@ -42,6 +42,7 @@ in
     "virtio_pci"
     "virtio_blk"
     "virtio_scsi"
+    "scsi_mod"
     "ahci"
     "sd_mod"
     "sr_mod"
